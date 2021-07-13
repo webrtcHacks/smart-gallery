@@ -1,0 +1,96 @@
+<style>
+#localVideo {
+    width: 640px;
+}
+#cropped video {
+    width: 320px;
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+<div>This is a demo using MediaStreamTrack Insertable Streams (a.k.a. Breakout Box) to detect faces (using the <a href="https://github.com/google/mediapipe">MediaPipe library</a>) and then crop them out.
+It allows splitting up a in-person meeting with multiple people in the same room into separate cropped streams similar to what is described <a href="https://blog.zoom.us/preparing-workspaces-for-hybrid-workforce-new-zoom-rooms-updates-2/">here</a>.
+</div>
+<div id="notsupported">This demo requires MediaStreamTrack Insertable Streams which requires experimental web platform features to be enabled in chrome://flags. It also needs OffscreenCanvas.</div>
+<video id="localVideo" autoplay playsinline></video>
+<br>
+<div id="cropped">
+    <video id="crop0" autoplay playsinline></video>
+    <video id="crop1" autoplay playsinline></video>
+</div>
+
+<script>
+const canvas = new OffscreenCanvas(1, 1);
+const ctx = canvas.getContext('2d', {desynchronized: true});
+let faces;
+const width = 1280;
+const height = 720;
+const boxWidth = 640;
+const boxHeight = 360;
+
+canvas.width = boxWidth;
+canvas.height = boxHeight;
+
+async function transform(frame, controller, index) {
+    // Cropping is a bit too complex. See https://github.com/w3c/webcodecs/issues/281
+    if (faces && faces.detections[index]) {
+        //console.log('DETECTED', faces.detections.length, faces.detections, frame);
+        const box = faces.detections[index].boundingBox;
+        ctx.drawImage(frame,
+			Math.min(Math.max(Math.floor(box.xCenter * frame.codedWidth) - boxWidth / 2, 0), frame.codedWidth - boxWidth),
+			Math.min(Math.max(Math.floor(box.yCenter * frame.codedHeight) - boxHeight / 2, 0), frame.codedHeight - boxHeight),
+            boxWidth, boxHeight,
+            0, 0, boxWidth, boxHeight);
+        const newFrame = new VideoFrame(canvas);
+        controller.enqueue(newFrame);
+    }
+    frame.close();
+}
+
+const faceDetection = new FaceDetection({locateFile: (file) => {
+  return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4/${file}`;
+}});
+
+faceDetection.setOptions({
+  model: 'short',
+  minDetectionConfidence: 0.5,
+});
+faceDetection.onResults(results => {
+    console.log('update results', results);
+    // For a real "product" one would have to track the different boxes and their
+    // movement to prevent jumps.
+	faces = results;
+});
+
+if (!(typeof MediaStreamTrackProcessor === 'undefined' || typeof MediaStreamTrackGenerator === 'undefined')) {
+    document.getElementById('notsupported').style.display = 'none';
+    navigator.mediaDevices.getUserMedia({video: {width, height}}).then(async (stream) => {
+        localVideo.srcObject = stream;
+        // Update face detection every two ѕeconds.
+        setInterval(() => {
+            faceDetection.send({image: document.getElementById('localVideo')});
+        }, 2000);
+
+        const [track] = stream.getTracks();
+        const generator0 = new MediaStreamTrackGenerator('video');
+        generator0.addEventListener('mute', () => console.log('first generator muted'));
+        generator0.addEventListener('unmute', () => console.log('first generator unmuted'));
+        const generator1 = new MediaStreamTrackGenerator('video');
+        generator1.addEventListener('mute', () => console.log('second generator muted'));
+        generator1.addEventListener('unmute', () => console.log('second generator unmuted'));
+        crop0.srcObject = new MediaStream([generator0]);
+        crop1.srcObject = new MediaStream([generator1]);
+
+        const processor0 = new MediaStreamTrackProcessor(track);
+        processor0.readable.pipeThrough(new TransformStream({
+            transform: (frame, controller) => transform(frame, controller, 0)
+        })).pipeTo(generator0.writable);
+        const processor1 = new MediaStreamTrackProcessor(track);
+        processor1.readable.pipeThrough(new TransformStream({
+            transform: (frame, controller) => transform(frame, controller, 1)
+        })).pipeTo(generator1.writable);
+
+    });
+}
+</script>
+</body>
+</html>
