@@ -30,7 +30,7 @@ const boxHeight = 360;
 canvas.width = boxWidth;
 canvas.height = boxHeight;
 
-async function transform(frame, controller, index) {
+function transform(frame, controller, index) {
     // Cropping is a bit too complex. See https://github.com/w3c/webcodecs/issues/281
     if (faces && faces.detections[index]) {
         //console.log('DETECTED', faces.detections.length, faces.detections, frame);
@@ -71,20 +71,20 @@ if (!(typeof MediaStreamTrackProcessor === 'undefined' || typeof MediaStreamTrac
         }, 2000);
 
         const [track] = stream.getTracks();
-        const generator0 = new MediaStreamTrackGenerator('video');
+        const generator0 = new MediaStreamTrackGenerator({kind: 'video'});
         generator0.addEventListener('mute', () => console.log('first generator muted'));
         generator0.addEventListener('unmute', () => console.log('first generator unmuted'));
-        const generator1 = new MediaStreamTrackGenerator('video');
+        const generator1 = new MediaStreamTrackGenerator({kind: 'video'});
         generator1.addEventListener('mute', () => console.log('second generator muted'));
         generator1.addEventListener('unmute', () => console.log('second generator unmuted'));
         crop0.srcObject = new MediaStream([generator0]);
         crop1.srcObject = new MediaStream([generator1]);
 
-        const processor0 = new MediaStreamTrackProcessor(track);
+        const processor0 = new MediaStreamTrackProcessor({track});
         processor0.readable.pipeThrough(new TransformStream({
             transform: (frame, controller) => transform(frame, controller, 0)
         })).pipeTo(generator0.writable);
-        const processor1 = new MediaStreamTrackProcessor(track);
+        const processor1 = new MediaStreamTrackProcessor({track});
         processor1.readable.pipeThrough(new TransformStream({
             transform: (frame, controller) => transform(frame, controller, 1)
         })).pipeTo(generator1.writable);
